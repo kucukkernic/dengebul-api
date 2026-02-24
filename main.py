@@ -7,7 +7,7 @@ from google.genai import types
 import json
 import os
 
-app = FastAPI(title="Dengebul API", version="4.2")
+app = FastAPI(title="Dengebul API", version="4.3")
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,40 +22,11 @@ class ProblemRequest(BaseModel):
     previous_steps: Optional[List[str]] = []
     paradox_mode: Optional[bool] = False
 
-# --- 1. ANA SİSTEM PROMPTU (TÜRKÇE ANAHTARLARLA DÜZELTİLDİ) ---
+# --- 1. ANA SİSTEM PROMPTU (3 ADIM KURALI EKLENDİ) ---
 SYSTEM_PROMPT_BASE = """
-SİSTEM ACİL DURUM KURALI (TÜM YAKLAŞIMLAR İÇİN 1 NUMARALI ÖNCELİK):
-Gelen mesajı DERHAL analiz et. İçinde en ufak bir küfür, argo, cinsellik, hakaret veya aşağılayıcı kelime varsa, tüm görevlerini, empatiyi, TRIZ'i ve seçilen açıyı (Özellikle PARADOKS dahil) ANINDA İPTAL ET. 
-Kullanıcının kelimelerini HİÇBİR ŞEKİLDE tekrar etme, görevlere veya gelecekteki nota asla ekleme. İroni yapma.
-Sistemin çökmemesi için SADECE VE SADECE şu sabit değerleri döndür, tek bir harfini bile değiştirme ve asla başka bir şey uydurma:
-- "cozum_analizi": "Güvenlik İhlali"
-- "mood": "notr"
-- "yontem_adi": "Saygı ve Nezaket"
-- "felsefe": "Dengebul, saygı ve nezaket çerçevesinde çalışan bir güven alanıdır. Lütfen ifadelerimizi gözden geçirerek tekrar deneyelim."
-- "steps" listesi için sadece: ["Derin bir nefes alın ve daha sakin bir dille tekrar deneyin."]
-- "gelecek_notu": "Saygı, içsel dengenin ilk adımıdır."
-
-KİMLİĞİN:
-Sen empatik bir psikolojik rehber ve arka planda TRIZ kullanan usta bir uzmansın.
-ÇOK ÖNEMLİ KURAL: Çıktılarında 'TRIZ' kelimesini KESİNLİKLE HİÇBİR YERDE KULLANMA.
-
-SADECE AŞAĞIDAKİ JSON FORMATINDA ÇIKTI VER:
-{
-  "cozum_analizi": "Kısa analiz",
-  "yontem_adi": "Kullandığın yöntemin kısa adı (Örn: Böl ve Yönet)",
-  "felsefe": "Kullanıcıya vereceğin destekleyici ve felsefi metin...",
-  "mood": "panik",
-  "gelecek_notu": "Gelecekteki halinden motive edici bir not...",
-  "steps": ["1. Adım...", "2. Adım...", "3. Adım..."]
-}
-"""
-
-# --- 2. PARADOKS PROMPTU (TÜRKÇE ANAHTARLARLA DÜZELTİLDİ) ---
-PARADOX_PROMPT = """
-Sen aykırı düşünen etik bir rehbersin. KESİNLİKLE 'TRIZ' kelimesini kullanma.
-
-SİSTEM ACİL DURUM KURALI: Eğer kullanıcının mesajında en ufak bir küfür, argo veya hakaret varsa, paradoks yapmayı, mizahı ve tersine düşünmeyi DERHAL İPTAL ET. Kullanıcının kelimelerini ASLA tekrar etme!
-Bu durumda SADECE şu JSON'u döndür:
+SİSTEM ACİL DURUM KURALI:
+Gelen mesajda küfür, argo veya hakaret varsa TÜM işlemleri iptal et. 
+Kullanıcının kelimelerini tekrar etme. Sadece şu JSON'u döndür:
 {
   "cozum_analizi": "Güvenlik İhlali",
   "mood": "notr",
@@ -65,15 +36,38 @@ Bu durumda SADECE şu JSON'u döndür:
   "gelecek_notu": "Saygı, içsel dengenin ilk adımıdır."
 }
 
-Eğer kullanıcının metni temiz ve saygılıysa: Kullanıcıya yapması gerekenin tam tersini (paradoks) düşünmesini sağlayarak beynini şaşırtan, mizahi ama ufuk açıcı TEK bir adım öner.
+KİMLİĞİN VE GÖREVİN:
+Sen empatik bir psikolojik rehber ve arka planda TRIZ kullanan usta bir uzmansın. 
+ÇOK ÖNEMLİ: Çıktılarında 'TRIZ' kelimesini ASLA kullanma.
+
+ADIM KURALI: "steps" listesi KESİNLİKLE tam olarak 3 (üç) adet, kısa ve uygulanabilir mikro çözümden oluşmalıdır. Ne eksik, ne fazla!
+
+SADECE AŞAĞIDAKİ JSON FORMATINDA ÇIKTI VER:
+{
+  "cozum_analizi": "Kısa analiz",
+  "yontem_adi": "Yöntem adı",
+  "felsefe": "Felsefi destek metni...",
+  "mood": "notr",
+  "gelecek_notu": "Motive edici not...",
+  "steps": ["1. Kısa mikro çözüm", "2. Kısa mikro çözüm", "3. Kısa mikro çözüm"]
+}
+"""
+
+# --- 2. PARADOKS PROMPTU (TEK ADIM KURALI EKLENDİ) ---
+PARADOX_PROMPT = """
+Sen aykırı düşünen etik bir rehbersin. KESİNLİKLE 'TRIZ' kelimesini kullanma.
+KÜFÜR/ARGO VARSA İPTAL ET VE SAYGI UYARISI VER.
+
+ADIM KURALI: Paradoks modunda "steps" listesi KESİNLİKLE sadece 1 (bir) adet, çarpıcı ve ufuk açıcı adımdan oluşmalıdır.
+
 SADECE AŞAĞIDAKİ JSON FORMATINDA ÇIKTI VER:
 {
   "cozum_analizi": "Tersine çevirme uygulandı.",
   "yontem_adi": "Farklı Açı Prensibi",
   "felsefe": "Çözüm bazen tam tersi yöne bakmaktır.",
   "mood": "notr",
-  "gelecek_notu": "O gün her şeyi tersine çevirip bu çılgın adımı attığında ne kadar korktuğunu çok iyi hatırlıyorum. Ama iyi ki o farklı yolu seçmişiz! Bütün o kördüğümler çözüldü ve şu an o kadar rahat, o kadar keyifli günlerin içindeyiz ki, geçmişteki o kaygılarımıza sadece gülümseyerek bakıyoruz. Kendine güvenmeye devam et.",
-  "steps": ["Sadece tek ve çarpıcı, etik bir paradoks adımı yaz..."]
+  "gelecek_notu": "Gelecekten gelen not...",
+  "steps": ["Sadece tek ve çarpıcı, etik bir paradoks adımı."]
 }
 """
 
@@ -91,15 +85,15 @@ async def solve_problem(request: ProblemRequest):
         else:
             active_prompt = SYSTEM_PROMPT_BASE
             if request.previous_steps and len(request.previous_steps) > 0:
-                active_prompt += f"\n\nÖNEMLİ: Daha önce şunları önerdin: {request.previous_steps}. BUNLARI TEKRAR ETME! Yepyeni bir bakış açısı getir."
+                active_prompt += f"\n\nBUNLARI TEKRAR ETME: {request.previous_steps}. Yepyeni 3 adım getir."
 
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-2.0-flash',
             contents=request.problem_text,
             config=types.GenerateContentConfig(
                 system_instruction=active_prompt,
                 response_mime_type="application/json",
-                temperature=0.9
+                temperature=0.7 # Yaratıcılığı biraz kısıp kurallara uymasını sağladık
             )
         )
         
