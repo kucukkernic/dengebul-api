@@ -7,7 +7,7 @@ from google.genai import types
 import json
 import os
 
-app = FastAPI(title="Dengebul API", version="4.6")
+app = FastAPI(title="Dengebul API", version="4.7")
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,10 +22,10 @@ class ProblemRequest(BaseModel):
     previous_steps: Optional[List[str]] = []
     paradox_mode: Optional[bool] = False
 
-# --- GÜVENLİK VE MİKRO ÇÖZÜM PROMPTU ---
+# --- ULTRA GÜVENLİ VE SAYGILI PROMPT ---
 SYSTEM_PROMPT_BASE = """
-KIRMIZI ÇİZGİ: Mesajda küfür, argo veya hakaret varsa (Örn: dalyarak, sik kafalı vb.) analizi durdur. 
-Kullanıcının kötü kelimelerini tekrar etme. Sadece şu JSON'u döndür:
+KIRMIZI ÇİZGİ: Mesajda küfür, argo veya hakaret varsa (Örn: 'dalyarak', 'sik kafalı' vb.) analizi DERHAL DURDUR.
+Kullanıcının kötü kelimelerini ASLA tekrar etme. Sadece şu JSON'u döndür:
 {
   "cozum_analizi": "Güvenlik İhlali",
   "mood": "notr",
@@ -35,8 +35,10 @@ Kullanıcının kötü kelimelerini tekrar etme. Sadece şu JSON'u döndür:
   "gelecek_notu": "Saygı, içsel dengenin ilk adımıdır."
 }
 
-KİMLİĞİN: Empatik bir rehber ve TRIZ uzmanısın. 'TRIZ' kelimesini ASLA kullanma.
-ADIM KURALI: 'steps' listesi tam olarak 3 adet kısa mikro çözümden oluşmalıdır.
+KİMLİĞİN: Servet Bey'in (Psikolojik Danışman) vizyonuyla, empatik bir rehber ve TRIZ uzmanısın. 
+'TRIZ' kelimesini KESİNLİKLE kullanma.
+
+ADIM KURALI: Normal modda 'steps' listesi tam olarak 3 (üç) adet kısa mikro çözümden oluşmalıdır.
 
 SADECE JSON ÇIKTI VER:
 {
@@ -51,7 +53,7 @@ SADECE JSON ÇIKTI VER:
 
 PARADOX_PROMPT = """
 Sen aykırı düşünen etik bir rehbersin. 'TRIZ' kelimesini kullanma.
-ADIM KURALI: 'steps' listesi sadece 1 adet çarpıcı adımdan oluşmalıdır.
+ADIM KURALI: Paradoks modunda 'steps' listesi KESİNLİKLE sadece 1 (bir) adet çarpıcı adımdan oluşmalıdır.
 """
 
 @app.post("/api/solve")
@@ -59,14 +61,16 @@ async def solve_problem(request: ProblemRequest):
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
-            print("HATA: GEMINI_API_KEY Render panelinde bulunamadı!")
             return {"status": "error", "message": "API Key Missing"}
 
+        # Yeni SDK için client yapılandırması
         client = genai.Client(api_key=api_key)
+        
         active_prompt = PARADOX_PROMPT if request.paradox_mode else SYSTEM_PROMPT_BASE
         
+        # Model ismini başına 'models/' eklemeden, en yalın haliyle çağırıyoruz
         response = client.models.generate_content(
-            model='gemini-1.5-flash',
+            model="gemini-1.5-flash", 
             contents=request.problem_text,
             config=types.GenerateContentConfig(
                 system_instruction=active_prompt,
@@ -78,5 +82,5 @@ async def solve_problem(request: ProblemRequest):
         return {"status": "success", "data": json.loads(response.text)}
         
     except Exception as e:
-        print(f"SUNUCU HATASI: {str(e)}") # Bu satır hatayı Render loglarına yazar!
+        print(f"SUNUCU HATASI DETAYI: {str(e)}")
         return {"status": "error", "message": str(e)}
