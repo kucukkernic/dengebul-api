@@ -7,7 +7,7 @@ from google.genai import types
 import json
 import os
 
-app = FastAPI(title="Dengebul API", version="4.5")
+app = FastAPI(title="Dengebul API", version="4.6")
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,11 +22,10 @@ class ProblemRequest(BaseModel):
     previous_steps: Optional[List[str]] = []
     paradox_mode: Optional[bool] = False
 
-# --- ULTRA GÜVENLİ VE SAYGILI PROMPT ---
+# --- GÜVENLİK VE MİKRO ÇÖZÜM PROMPTU ---
 SYSTEM_PROMPT_BASE = """
-SİSTEM ACİL DURUM KURALI:
-Eğer kullanıcı küfür, argo veya hakaret içerikli bir mesaj gönderirse (Örn: 'dalyarak', 'sik kafalı' vb.), tüm görevleri durdur ve ASLA bu kelimeleri tekrar etme.
-Sadece şu JSON'u döndür:
+KIRMIZI ÇİZGİ: Mesajda küfür, argo veya hakaret varsa (Örn: dalyarak, sik kafalı vb.) analizi durdur. 
+Kullanıcının kötü kelimelerini tekrar etme. Sadece şu JSON'u döndür:
 {
   "cozum_analizi": "Güvenlik İhlali",
   "mood": "notr",
@@ -36,36 +35,23 @@ Sadece şu JSON'u döndür:
   "gelecek_notu": "Saygı, içsel dengenin ilk adımıdır."
 }
 
-KİMLİĞİN:
-Sen empatik bir rehbersin. KESİNLİKLE 'TRIZ' kelimesini kullanma.
-ADIM KURALI: "steps" listesi KESİNLİKLE tam olarak 3 (üç) adet kısa adımdan oluşmalıdır.
+KİMLİĞİN: Empatik bir rehber ve TRIZ uzmanısın. 'TRIZ' kelimesini ASLA kullanma.
+ADIM KURALI: 'steps' listesi tam olarak 3 adet kısa mikro çözümden oluşmalıdır.
 
 SADECE JSON ÇIKTI VER:
 {
   "cozum_analizi": "Analiz",
   "yontem_adi": "Yöntem",
-  "felsefe": "Desteleyici metin...",
+  "felsefe": "Felsefe",
   "mood": "notr",
-  "gelecek_notu": "Motive edici not...",
-  "steps": ["1. Adım", "2. Adım", "3. Adım"]
+  "gelecek_notu": "Not",
+  "steps": ["1", "2", "3"]
 }
 """
 
 PARADOX_PROMPT = """
-Sen aykırı düşünen etik bir rehbersin. KESİNLİKLE 'TRIZ' kelimesini kullanma.
-Küfür/Argo varsa paradoksu iptal et ve saygı uyarısı ver.
-
-ADIM KURALI: Paradoks modunda "steps" listesi KESİNLİKLE sadece 1 (bir) adet çarpıcı adımdan oluşmalıdır.
-
-SADECE JSON ÇIKTI VER:
-{
-  "cozum_analizi": "Tersine çevirme uygulandı.",
-  "yontem_adi": "Farklı Açı Prensibi",
-  "felsefe": "Çözüm bazen tam tersi yöne bakmaktır.",
-  "mood": "notr",
-  "gelecek_notu": "Gelecekten gelen not...",
-  "steps": ["Sadece tek ve çarpıcı paradoks adımı."]
-}
+Sen aykırı düşünen etik bir rehbersin. 'TRIZ' kelimesini kullanma.
+ADIM KURALI: 'steps' listesi sadece 1 adet çarpıcı adımdan oluşmalıdır.
 """
 
 @app.post("/api/solve")
@@ -73,13 +59,14 @@ async def solve_problem(request: ProblemRequest):
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
-            return {"status": "error", "message": "API Key Eksik"}
+            print("HATA: GEMINI_API_KEY Render panelinde bulunamadı!")
+            return {"status": "error", "message": "API Key Missing"}
 
         client = genai.Client(api_key=api_key)
         active_prompt = PARADOX_PROMPT if request.paradox_mode else SYSTEM_PROMPT_BASE
         
         response = client.models.generate_content(
-            model='gemini-1.5-flash', # En stabil sürüm
+            model='gemini-1.5-flash',
             contents=request.problem_text,
             config=types.GenerateContentConfig(
                 system_instruction=active_prompt,
@@ -88,8 +75,8 @@ async def solve_problem(request: ProblemRequest):
             )
         )
         
-        result_data = json.loads(response.text)
-        return {"status": "success", "data": result_data}
+        return {"status": "success", "data": json.loads(response.text)}
         
     except Exception as e:
+        print(f"SUNUCU HATASI: {str(e)}") # Bu satır hatayı Render loglarına yazar!
         return {"status": "error", "message": str(e)}
