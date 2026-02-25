@@ -7,7 +7,7 @@ from google.genai import types
 import json
 import os
 
-app = FastAPI(title="Dengebul API", version="4.3")
+app = FastAPI(title="Dengebul API", version="4.5")
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,11 +22,11 @@ class ProblemRequest(BaseModel):
     previous_steps: Optional[List[str]] = []
     paradox_mode: Optional[bool] = False
 
-# --- 1. ANA SİSTEM PROMPTU (3 ADIM KURALI EKLENDİ) ---
+# --- ULTRA GÜVENLİ VE SAYGILI PROMPT ---
 SYSTEM_PROMPT_BASE = """
 SİSTEM ACİL DURUM KURALI:
-Gelen mesajda küfür, argo veya hakaret varsa TÜM işlemleri iptal et. 
-Kullanıcının kelimelerini tekrar etme. Sadece şu JSON'u döndür:
+Eğer kullanıcı küfür, argo veya hakaret içerikli bir mesaj gönderirse (Örn: 'dalyarak', 'sik kafalı' vb.), tüm görevleri durdur ve ASLA bu kelimeleri tekrar etme.
+Sadece şu JSON'u döndür:
 {
   "cozum_analizi": "Güvenlik İhlali",
   "mood": "notr",
@@ -36,38 +36,35 @@ Kullanıcının kelimelerini tekrar etme. Sadece şu JSON'u döndür:
   "gelecek_notu": "Saygı, içsel dengenin ilk adımıdır."
 }
 
-KİMLİĞİN VE GÖREVİN:
-Sen empatik bir psikolojik rehber ve arka planda TRIZ kullanan usta bir uzmansın. 
-ÇOK ÖNEMLİ: Çıktılarında 'TRIZ' kelimesini ASLA kullanma.
+KİMLİĞİN:
+Sen empatik bir rehbersin. KESİNLİKLE 'TRIZ' kelimesini kullanma.
+ADIM KURALI: "steps" listesi KESİNLİKLE tam olarak 3 (üç) adet kısa adımdan oluşmalıdır.
 
-ADIM KURALI: "steps" listesi KESİNLİKLE tam olarak 3 (üç) adet, kısa ve uygulanabilir mikro çözümden oluşmalıdır. Ne eksik, ne fazla!
-
-SADECE AŞAĞIDAKİ JSON FORMATINDA ÇIKTI VER:
+SADECE JSON ÇIKTI VER:
 {
-  "cozum_analizi": "Kısa analiz",
-  "yontem_adi": "Yöntem adı",
-  "felsefe": "Felsefi destek metni...",
+  "cozum_analizi": "Analiz",
+  "yontem_adi": "Yöntem",
+  "felsefe": "Desteleyici metin...",
   "mood": "notr",
   "gelecek_notu": "Motive edici not...",
-  "steps": ["1. Kısa mikro çözüm", "2. Kısa mikro çözüm", "3. Kısa mikro çözüm"]
+  "steps": ["1. Adım", "2. Adım", "3. Adım"]
 }
 """
 
-# --- 2. PARADOKS PROMPTU (TEK ADIM KURALI EKLENDİ) ---
 PARADOX_PROMPT = """
 Sen aykırı düşünen etik bir rehbersin. KESİNLİKLE 'TRIZ' kelimesini kullanma.
-KÜFÜR/ARGO VARSA İPTAL ET VE SAYGI UYARISI VER.
+Küfür/Argo varsa paradoksu iptal et ve saygı uyarısı ver.
 
-ADIM KURALI: Paradoks modunda "steps" listesi KESİNLİKLE sadece 1 (bir) adet, çarpıcı ve ufuk açıcı adımdan oluşmalıdır.
+ADIM KURALI: Paradoks modunda "steps" listesi KESİNLİKLE sadece 1 (bir) adet çarpıcı adımdan oluşmalıdır.
 
-SADECE AŞAĞIDAKİ JSON FORMATINDA ÇIKTI VER:
+SADECE JSON ÇIKTI VER:
 {
   "cozum_analizi": "Tersine çevirme uygulandı.",
   "yontem_adi": "Farklı Açı Prensibi",
   "felsefe": "Çözüm bazen tam tersi yöne bakmaktır.",
   "mood": "notr",
   "gelecek_notu": "Gelecekten gelen not...",
-  "steps": ["Sadece tek ve çarpıcı, etik bir paradoks adımı."]
+  "steps": ["Sadece tek ve çarpıcı paradoks adımı."]
 }
 """
 
@@ -76,24 +73,18 @@ async def solve_problem(request: ProblemRequest):
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
-            return {"status": "error", "message": "API Anahtarı bulunamadı."}
+            return {"status": "error", "message": "API Key Eksik"}
 
         client = genai.Client(api_key=api_key)
+        active_prompt = PARADOX_PROMPT if request.paradox_mode else SYSTEM_PROMPT_BASE
         
-        if request.paradox_mode:
-            active_prompt = PARADOX_PROMPT
-        else:
-            active_prompt = SYSTEM_PROMPT_BASE
-            if request.previous_steps and len(request.previous_steps) > 0:
-                active_prompt += f"\n\nBUNLARI TEKRAR ETME: {request.previous_steps}. Yepyeni 3 adım getir."
-
         response = client.models.generate_content(
-            model='gemini-2.0-flash',
+            model='gemini-1.5-flash', # En stabil sürüm
             contents=request.problem_text,
             config=types.GenerateContentConfig(
                 system_instruction=active_prompt,
                 response_mime_type="application/json",
-                temperature=0.7 # Yaratıcılığı biraz kısıp kurallara uymasını sağladık
+                temperature=0.7
             )
         )
         
