@@ -7,7 +7,7 @@ from google.genai import types
 import json
 import os
 
-app = FastAPI(title="Dengebul API", version="4.9")
+app = FastAPI(title="Dengebul API", version="5.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,8 +21,9 @@ class ProblemRequest(BaseModel):
     problem_text: str
     previous_steps: Optional[List[str]] = []
     paradox_mode: Optional[bool] = False
+    language: Optional[str] = "tr" # YENİ: Dil Seçeneği
 
-# --- DERİN EMPATİ, UFUK AÇICI ÇÖZÜMLER VE GEÇMİŞE BAKIŞ PROMPTU ---
+# --- ULTRA GÜVENLİ VE SAYGILI PROMPT ---
 SYSTEM_PROMPT_BASE = """
 SİSTEM ACİL DURUM KURALI:
 Kullanıcının yazdığı metinde 'dalyarak', 'sik kafalı' gibi küfürler, argo veya hakaret varsa TÜM ANALİZİ DURDUR.
@@ -41,10 +42,10 @@ Sen derin bir empati yeteneğine sahip bir rehber ve arka planda TRIZ prensipler
 KATI YASAK: Kullanıcıya asla "uzmana git", "kafana takma", "işine odaklan", "başka şeyler düşün", "hobi edin" gibi yüzeysel, kapalı, kısa ve klişe tavsiyeler VERME. 
 
 ADIM KURALI: 
-Tam olarak 3 (üç) adet adım sun. Bu adımlar ne çok kısa olup anlamsızlaşsın, ne de destan gibi uzayıp sıksın. Kullanıcı okuduğunda "Bunu hiç düşünmemiştim, farklı bir bakış açısı" demeli. Sorunla doğrudan bağlantı kur, kullanıcının duygusunu anladığını hissettir ve ona gerçekten pratik ama ezber bozan küçük yollar göster.
+Tam olarak 3 (üç) adet adım sun. Bu adımlar ne çok kısa olup anlamsızlaşsın, ne de destan gibi uzayıp sıksın. Kullanıcı okuduğunda "Bunu hiç düşünmemiştim" demeli. Sorunla doğrudan bağlantı kur, kullanıcının duygusunu anladığını hissettir ve ona gerçekten pratik ama ezber bozan küçük yollar göster.
 
 GELECEK NOTU KURALI:
-"gelecek_notu" anlık bir motivasyon sözü DEĞİLDİR. Bu not, kullanıcının bu sorunu tamamen aştığı gelecekteki halinden, geçmişteki (yani bugünkü) haline yazılmış şefkatli bir mektup kesiti olmalıdır. "O gün ne kadar zorlandığını çok iyi hatırlıyorum..." gibi geçmiş zaman kipiyle, huzurlu bir gelecekten seslen.
+"gelecek_notu", kullanıcının bu sorunu tamamen aştığı gelecekteki halinden, geçmişteki (yani bugünkü) haline yazılmış şefkatli bir mektup kesiti olmalıdır. Geçmiş zaman kipiyle, huzurlu bir gelecekten seslen.
 
 SADECE JSON ÇIKTI VER:
 {
@@ -53,7 +54,7 @@ SADECE JSON ÇIKTI VER:
   "felsefe": "Kullanıcının ruhuna dokunan felsefi bir destek",
   "mood": "notr",
   "gelecek_notu": "Gelecekten bugüne bakış...",
-  "steps": ["1. Ufuk açıcı, empati dolu ve eyleme dönüştürülebilir birinci adım...", "2. Farkındalık yaratan, klişeden uzak ikinci adım...", "3. Soruna farklı bir pencereden baktıran üçüncü adım..."]
+  "steps": ["1. Ufuk açıcı adım...", "2. Farkındalık yaratan adım...", "3. Farklı pencereden baktıran adım..."]
 }
 """
 
@@ -61,7 +62,7 @@ PARADOX_PROMPT = """
 Sen aykırı düşünen etik bir rehbersin. KESİNLİKLE 'TRIZ' kelimesini kullanma.
 SAYGI KURALI: Küfür/Argo varsa paradoksu iptal et ve saygı uyarısı JSON'unu ver.
 
-AMACIN: Klişelerden tamamen uzaklaşarak, kullanıcının sorununa "yapması gerekenin tam tersini" veya "en absürt görünen ama beyni şaşırtıp çözen" TEK BİR ufuk açıcı adım sunmak. "Bunu hiç düşünmemiştim" dedirtmelisin. Adım kapalı olmamalı, mantığı açıklayıcı ve empati dolu olmalı.
+AMACIN: Klişelerden tamamen uzaklaşarak, kullanıcının sorununa "yapması gerekenin tam tersini" veya "en absürt görünen ama beyni şaşırtıp çözen" TEK BİR ufuk açıcı adım sunmak.
 
 GELECEK NOTU: Kullanıcının bu çılgın adımı atıp sorunu çözdüğü gelecekten, bugüne gülümseyerek bakan şefkatli bir not. Geçmiş zaman kullan.
 
@@ -82,19 +83,26 @@ SADECE JSON ÇIKTI VER:
 async def solve_problem(request: ProblemRequest):
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            return {"status": "error", "message": "API Key Missing"}
+        if not api_key: return {"status": "error", "message": "API Key Missing"}
 
         client = genai.Client(api_key=api_key)
         active_prompt = PARADOX_PROMPT if request.paradox_mode else SYSTEM_PROMPT_BASE
         
+        # --- YENİ EKLENEN ÇEVİRİ ZEKASI ---
+        if request.language == "en":
+            lang_instruction = "\n\nCRITICAL RULE: The user has selected English. You MUST generate ALL text values inside the JSON (cozum_analizi, yontem_adi, felsefe, gelecek_notu, steps) strictly in highly empathetic, native-level English. Do NOT change the JSON keys."
+        else:
+            lang_instruction = "\n\nDİL KURALI: Kullanıcı Türkçe dilini seçti. Lütfen JSON içindeki tüm metinleri Türkçe üret."
+            
+        final_prompt = active_prompt + lang_instruction
+
         response = client.models.generate_content(
             model='gemini-2.5-flash', 
             contents=request.problem_text,
             config=types.GenerateContentConfig(
-                system_instruction=active_prompt,
+                system_instruction=final_prompt,
                 response_mime_type="application/json",
-                temperature=0.8 # Farklı pencereler açabilmesi için yaratıcılığı hafifçe artırdık
+                temperature=0.8
             )
         )
         return {"status": "success", "data": json.loads(response.text)}
